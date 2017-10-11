@@ -181,8 +181,27 @@ void SimpleCollisionHandler::respondParticleParticle(TwoDScene &scene, int idx1,
     const VectorXs &M = scene.getM();
     VectorXs &v = scene.getV();
     
-    // your implementation here
+    // your implementation here    
     
+    VectorXs v1 = v.segment<2>(2*idx1);
+    VectorXs v2 = v.segment<2>(2*idx2);
+    
+    scalar m1 = M[2*idx1];
+    scalar m2 = M[2*idx2];
+    
+    #if DEBUG_MODE
+        //printf("----------------------\n");
+        //printf("mass vectors\n");
+        //DEBUGPrintVector(m1);
+        //DEBUGPrintVector(m2);
+    #endif
+    
+    VectorXs i1 = (((2*(v2-v1)).dot(n)) / (1 + (m1/m2))) * n;
+    VectorXs i2 = (((2*(v2-v1)).dot(n)) / ((m2/m1) + 1)) * n;
+    
+    v.segment<2>(2*idx1) += i1;
+    v.segment<2>(2*idx2) -= i2;
+        
 }
 
 // Responds to a collision detected between a particle and an edge by applying
@@ -209,7 +228,31 @@ void SimpleCollisionHandler::respondParticleEdge(TwoDScene &scene, int vidx, int
     VectorXs v2 = scene.getV().segment<2>(2*eidx1);
     VectorXs v3 = scene.getV().segment<2>(2*eidx2);
     
+    scalar m1 = M[2*vidx];
+    scalar m2 = M[2*eidx1];
+    scalar m3 = M[2*eidx2];
+    
     // your implementation here
+    // 
+    scalar alpha = (x1 - x2).dot(x3-x2) / ((x3-x2).norm() * (x3-x2).norm());       
+    
+    if(alpha > 1) {
+        alpha = 1;
+    } else if(alpha < 0) {
+        alpha = 0;
+    }
+    
+    scalar restAlpha = 1 - alpha;
+    
+    VectorXs ve = (restAlpha * v2) + ((alpha) * v3);   
+    
+    VectorXs i1 = (((2 * (ve - v1)).dot(n)) / (1 + ((restAlpha * restAlpha * m1)/m2) + ((alpha * alpha * m1) / m3))) * n;
+    VectorXs i2 = (((2 * restAlpha * (ve - v1)).dot(n))/((m2/m1) + (restAlpha * restAlpha) + ((alpha * alpha * m2)/m3))) * n;
+    VectorXs i3 = ((((2 * alpha)*(ve - v1)).dot(n)) / ((m3/m1) + ((restAlpha * restAlpha * m3)/m2) + (alpha * alpha))) * n;
+    
+    scene.getV().segment<2>(2*vidx) += i1;
+    scene.getV().segment<2>(2*eidx1) -= i2;
+    scene.getV().segment<2>(2*eidx2) -= i3;
     
 }
 
