@@ -1,6 +1,8 @@
 #include "SimpleCollisionHandler.h"
+#include <stdio.h>
 #include <iostream>
 #include <set>
+#include "DebugHelpers.h"
 
 // BEGIN STUDENT CODE //
 
@@ -24,9 +26,39 @@ bool SimpleCollisionHandler::detectParticleParticle(TwoDScene &scene, int idx1, 
     VectorXs x1 = scene.getX().segment<2>(2*idx1);
     VectorXs x2 = scene.getX().segment<2>(2*idx2);
     
-    // your implementation here
+    VectorXs v1 = scene.getV().segment<2>(2*idx1);
+    VectorXs v2 = scene.getV().segment<2>(2*idx2);
     
-    return false;
+    scalar r1 = scene.getRadius(idx1);
+    scalar r2 = scene.getRadius(idx2);
+    
+    VectorXs movement = x2 - x1;    
+    
+    VectorXs relativeV = v1 - v2;
+    
+    n = movement;
+    
+    #if DEBUG_MODE
+        //DEBUGPrintVector(movement);
+        //DEBUGPrintVector(n);
+    #endif
+        
+    scalar distance = movement.norm();
+    scalar minDistance = r1 + r2;
+    
+    //movement.normalize();
+    //relativeV.normalize();
+    
+    scalar direction = movement.dot(relativeV);
+       
+    bool isColliding = false;
+    if(direction > 0) {
+        isColliding =  distance < minDistance;
+    }
+    #if DEBUG_MODE
+        printf("direction: %.4f, distance: %.4f, min distance: %.4f, isColliding: %d\n", direction, distance, minDistance, isColliding);
+    #endif        
+    return isColliding;                 
 }
 
 // Detects whether a particle and an edge are overlapping (including the radii 
@@ -44,12 +76,54 @@ bool SimpleCollisionHandler::detectParticleParticle(TwoDScene &scene, int idx1, 
 bool SimpleCollisionHandler::detectParticleEdge(TwoDScene &scene, int vidx, int eidx, Vector2s &n)
 {
     VectorXs x1 = scene.getX().segment<2>(2*vidx);
-    VectorXs x2 = scene.getX().segment<2>(2*scene.getEdges()[eidx].first);
-    VectorXs x3 = scene.getX().segment<2>(2*scene.getEdges()[eidx].second);
+    
+    int eVIdx1 = scene.getEdges()[eidx].first;
+    int eVIdx2 = scene.getEdges()[eidx].second;
+    
+    VectorXs x2 = scene.getX().segment<2>(2*eVIdx1);
+    VectorXs x3 = scene.getX().segment<2>(2*eVIdx2);      
+    
+    VectorXs v1 = scene.getV().segment<2>(2*vidx);
+    VectorXs v2 = scene.getV().segment<2>(2*eVIdx1);
+    VectorXs v3 = scene.getV().segment<2>(2*eVIdx2);
+    
+    scalar alpha = (x1 - x2).dot(x3-x2) / ((x3-x2).norm() * (x3-x2).norm());       
+    
+    if(alpha > 1) {
+        alpha = 1;
+    } else if(alpha < 0) {
+        alpha = 0;
+    }
+    
+    scalar particleRadius = scene.getRadius(vidx);    
+    scalar x2Radius = scene.getRadius(scene.getEdges()[eidx].first);
+    scalar x3Radius = scene.getRadius(scene.getEdges()[eidx].second);
+    
+    //scalar edgeRadius = ((x3Radius - x2Radius) * alpha) + x2Radius;
+    scalar edgeRadius = scene.getEdgeRadii()[eidx];
+    
+    VectorXs xAlpha = x2 + (alpha * (x3 - x2));
+    VectorXs vAlpha = v2 + (alpha * (v3 - v2));
+    
+    n = xAlpha - x1;
+    
+    scalar distance = n.norm();    
+    scalar direction = (v1 - vAlpha).dot(n);
+                                              
+    bool isColliding = false;
+    if(direction > 0) {
+        if(distance < edgeRadius + particleRadius) {
+            isColliding = true;
+        }
+    }
     
     // your implementation here
+    #if DEBUG_MODE
+        printf("alpha: %.4f\n, particleRadius: %.4f, edgeRadius: %.4f, direction: %.4f, isColliding: %d\n", alpha, particleRadius, edgeRadius, direction, isColliding);                                 
+        //DEBUGPrintVector(n);
+    #endif          
     
-    return false;
+    return isColliding;
 }
 
 // Detects whether a particle and a half-plane are overlapping (including the 
@@ -70,9 +144,25 @@ bool SimpleCollisionHandler::detectParticleHalfplane(TwoDScene &scene, int vidx,
     VectorXs px = scene.getHalfplane(pidx).first;
     VectorXs pn = scene.getHalfplane(pidx).second;
     
-    // your implementation here
+    VectorXs v1 = scene.getV().segment<2>(2*vidx);      
+    scalar r1 = scene.getRadius(vidx);
     
-    return false;
+    // your implementation here
+    n = ((px - x1).dot(pn)/(pn.norm() * pn.norm())) * pn;
+    
+    scalar distance = n.norm();
+    
+    bool isColliding = false;    
+    if(v1.dot(n) > 0) {
+        isColliding = distance < r1;
+    }
+    
+    #if DEBUG_MODE            
+        printf("half plane isColliding: %d, n:\n", isColliding);
+        DEBUGPrintVector(n);
+    #endif
+    
+    return isColliding;
 }
 
 
