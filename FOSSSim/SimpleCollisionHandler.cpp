@@ -4,6 +4,8 @@
 #include <set>
 #include "DebugHelpers.h"
 
+#define INFINITY std::numeric_limits<double>::infinity()
+
 // BEGIN STUDENT CODE //
 
 
@@ -182,26 +184,38 @@ void SimpleCollisionHandler::respondParticleParticle(TwoDScene &scene, int idx1,
     VectorXs &v = scene.getV();
     
     // your implementation here    
+    // 
+    VectorXs nhat = n;
+    nhat.normalize();
     
     VectorXs v1 = v.segment<2>(2*idx1);
-    VectorXs v2 = v.segment<2>(2*idx2);
+    VectorXs v2 = v.segment<2>(2*idx2);    
     
-    scalar m1 = M[2*idx1];
-    scalar m2 = M[2*idx2];
+    bool pIsFixed1 = scene.isFixed(idx1);
+    bool pIsFixed2 = scene.isFixed(idx2);
+    
+    scalar m1 = pIsFixed1 ? INFINITY : M[2*idx1];
+    scalar m2 = pIsFixed2 ? INFINITY : M[2*idx2];
+    
+    scalar corFactor = (1 + getCOR()) / 2;        
     
     #if DEBUG_MODE
         //printf("----------------------\n");
         //printf("mass vectors\n");
         //DEBUGPrintVector(m1);
         //DEBUGPrintVector(m2);
-    #endif
+        printf("cor: %.4f, corfactor: %.4f", getCOR(), corFactor);
+    #endif     
     
-    VectorXs i1 = (((2*(v2-v1)).dot(n)) / (1 + (m1/m2))) * n;
-    VectorXs i2 = (((2*(v2-v1)).dot(n)) / ((m2/m1) + 1)) * n;
+    if(!pIsFixed1) {
+        VectorXs i1 = corFactor * (((2*(v2-v1)).dot(nhat)) / (1 + (m1/m2))) * nhat;    
+        v.segment<2>(2*idx1) += i1;
+    }
     
-    v.segment<2>(2*idx1) += i1;
-    v.segment<2>(2*idx2) -= i2;
-        
+    if(!pIsFixed2) {
+        VectorXs i2 = corFactor * (((2*(v2-v1)).dot(nhat)) / ((m2/m1) + 1)) * nhat;    
+        v.segment<2>(2*idx2) -= i2;
+    }               
 }
 
 // Responds to a collision detected between a particle and an edge by applying
@@ -217,6 +231,9 @@ void SimpleCollisionHandler::respondParticleEdge(TwoDScene &scene, int vidx, int
 {
     const VectorXs &M = scene.getM();
     
+    VectorXs nhat = n;
+    nhat.normalize();
+    
     int eidx1 = scene.getEdges()[eidx].first;
     int eidx2 = scene.getEdges()[eidx].second;
     
@@ -228,9 +245,13 @@ void SimpleCollisionHandler::respondParticleEdge(TwoDScene &scene, int vidx, int
     VectorXs v2 = scene.getV().segment<2>(2*eidx1);
     VectorXs v3 = scene.getV().segment<2>(2*eidx2);
     
-    scalar m1 = M[2*vidx];
-    scalar m2 = M[2*eidx1];
-    scalar m3 = M[2*eidx2];
+    bool pIsFixed1 = scene.isFixed(vidx);
+    bool pIsFixed2 = scene.isFixed(eidx1);
+    bool pIsFixed3 = scene.isFixed(eidx2);
+    
+    scalar m1 = pIsFixed1 ? INFINITY : M[2*vidx];
+    scalar m2 = pIsFixed2 ? INFINITY : M[2*eidx1];
+    scalar m3 = pIsFixed3 ? INFINITY: M[2*eidx2];
     
     // your implementation here
     // 
@@ -246,14 +267,27 @@ void SimpleCollisionHandler::respondParticleEdge(TwoDScene &scene, int vidx, int
     
     VectorXs ve = (restAlpha * v2) + ((alpha) * v3);   
     
-    VectorXs i1 = (((2 * (ve - v1)).dot(n)) / (1 + ((restAlpha * restAlpha * m1)/m2) + ((alpha * alpha * m1) / m3))) * n;
-    VectorXs i2 = (((2 * restAlpha * (ve - v1)).dot(n))/((m2/m1) + (restAlpha * restAlpha) + ((alpha * alpha * m2)/m3))) * n;
-    VectorXs i3 = ((((2 * alpha)*(ve - v1)).dot(n)) / ((m3/m1) + ((restAlpha * restAlpha * m3)/m2) + (alpha * alpha))) * n;
+    scalar corFactor = (1 + getCOR()) / 2;
     
-    scene.getV().segment<2>(2*vidx) += i1;
-    scene.getV().segment<2>(2*eidx1) -= i2;
-    scene.getV().segment<2>(2*eidx2) -= i3;
+    #if DEBUG_MODE 
+        printf("cor: %.4f, corfactor: %.4f", getCOR(), corFactor);
+    #endif
     
+    if(!pIsFixed1) {
+        VectorXs i1 = corFactor * (((2 * (ve - v1)).dot(nhat)) / (1 + ((restAlpha * restAlpha * m1)/m2) + ((alpha * alpha * m1) / m3))) * nhat;        
+        scene.getV().segment<2>(2*vidx) += i1;
+    }
+    
+    if(!pIsFixed2) {
+        VectorXs i2 = corFactor * (((2 * restAlpha * (ve - v1)).dot(nhat))/((m2/m1) + (restAlpha * restAlpha) + ((alpha * alpha * m2)/m3))) * nhat;    
+        scene.getV().segment<2>(2*eidx1) -= i2;        
+    }
+    
+    if(!pIsFixed3) {
+        VectorXs i3 = corFactor * ((((2 * alpha)*(ve - v1)).dot(nhat)) / ((m3/m1) + ((restAlpha * restAlpha * m3)/m2) + (alpha * alpha))) * nhat;        
+        scene.getV().segment<2>(2*eidx2) -= i3;
+    }
+        
 }
 
 
@@ -269,6 +303,25 @@ void SimpleCollisionHandler::respondParticleEdge(TwoDScene &scene, int vidx, int
 void SimpleCollisionHandler::respondParticleHalfplane(TwoDScene &scene, int vidx, int pidx, const Vector2s &n)
 {
     VectorXs nhat = n;
+    
+    nhat.normalize();    
+    
+    VectorXs v = scene.getV().segment<2>(2*vidx);
+   
+    scalar corFactor = (1.0 + getCOR()) / 2.0;   
+    
+    VectorXs i = corFactor * (2.0 * ((v.dot(nhat)) * nhat));
+    
+    #if DEBUG_MODE 
+        printf("cor: %.4f, corfactor: %.4f, impulse: \n", getCOR(), corFactor);
+        DEBUGPrintVector(i);
+        printf("n:\n");
+        DEBUGPrintVector(n);
+        printf("nhat:\n");
+        DEBUGPrintVector(nhat);
+    #endif      
+      
+    scene.getV().segment<2>(2*vidx) -= i;
     
     // your implementation here
     
